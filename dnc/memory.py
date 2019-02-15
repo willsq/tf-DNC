@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """DNC memory operations and state.
 
 Conventions:
@@ -8,7 +9,6 @@ Conventions:
 
 from collections import namedtuple
 import tensorflow as tf
-import sonnet as snt
 
 EPSILON = 1e-6
 
@@ -21,7 +21,7 @@ class ContentAddressing:
     """
 
     @staticmethod
-    def weighting(memory_matrix, keys, strengths, sharpness_op=tf.nn.softplus):
+    def weighting(memory_matrix, keys, strengths, sharpness_op=tf.math.softplus):
         """Get content-based weighting using cosine similarity. The weighting
         for each memory slot will be high if the key points in the same
         direction as the memory contents at that slot.
@@ -35,12 +35,12 @@ class ContentAddressing:
         Returns:
             Tensor [B, N, R]: lookup weightings for each key
         """
-        memory_normalised = tf.nn.l2_normalize(memory_matrix, 2, epsilon=EPSILON)
-        keys_normalised = tf.nn.l2_normalize(keys, 1, epsilon=EPSILON)
+        memory_normalised = tf.math.l2_normalize(memory_matrix, 2, epsilon=EPSILON)
+        keys_normalised = tf.math.l2_normalize(keys, 1, epsilon=EPSILON)
         similiarity = tf.matmul(memory_normalised, keys_normalised)
         strengths = tf.expand_dims(sharpness_op(strengths), 1)
 
-        return tf.nn.softmax(similiarity * strengths, 1)
+        return tf.math.softmax(similiarity * strengths, 1)
 
 
 class TemporalLinkAddressing:
@@ -66,7 +66,7 @@ class TemporalLinkAddressing:
         Returns:
             Tensor [B, N]: precedence vector to use at next time step
         """
-        write_strength = tf.reduce_sum(write_weighting, 1, keep_dims=True)
+        write_strength = tf.reduce_sum(input_tensor=write_weighting, axis=1, keepdims=True)
         updated_precedence_vector = (1 - write_strength) * prev_precedence_vector + write_weighting
 
         return updated_precedence_vector
@@ -100,7 +100,7 @@ class TemporalLinkAddressing:
         )
         zero_diagonal = tf.zeros([batch_size, words_num], dtype=link_matrix.dtype)
 
-        return tf.matrix_set_diag(link_matrix, zero_diagonal)
+        return tf.linalg.set_diag(link_matrix, zero_diagonal)
 
     @staticmethod
     def weightings(link_matrix, prev_read_weightings):
@@ -155,7 +155,7 @@ class AllocationAdressing:
         """
         with tf.name_scope('allocation_addressing'):
             retention_vector = tf.reduce_prod(
-                1 - tf.expand_dims(free_gates, 1) * prev_read_weightings,
+                input_tensor=1 - tf.expand_dims(free_gates, 1) * prev_read_weightings,
                 axis=2,
             )
             usage_vector = (
@@ -172,7 +172,7 @@ class AllocationAdressing:
         """
         unpacked = tf.unstack(indices)
         indices_inverted = tf.stack(
-            [tf.invert_permutation(permutation) for permutation in unpacked]
+            [tf.math.invert_permutation(permutation) for permutation in unpacked]
         )
 
         unpacked = zip(tf.unstack(tensor), tf.unstack(indices_inverted))
@@ -196,18 +196,22 @@ class AllocationAdressing:
         words_num = usage_vector.get_shape().as_list()[1]
         emptiness_sorted, free_list = tf.nn.top_k(emptiness, k=words_num)
         usage_sorted = 1 - emptiness_sorted
-        allocation_sorted = emptiness_sorted * tf.cumprod(usage_sorted, axis=1, exclusive=True)
+        allocation_sorted = emptiness_sorted * tf.math.cumprod(usage_sorted, axis=1, exclusive=True)
 
         return AllocationAdressing.batch_unsort(allocation_sorted, free_list)
 
 
-class Memory(snt.RNNCore):
+class Memory:
     """Differentiable memory for the DNC.
 
     This module implements a recurrent module interface and tracks memory state
     through time. Performs a write and read operation given the previous state
     and an interface vector defining how to interact with the memory at the
     current time step.
+
+    Note: although this layer behaves similar to an rnn, it has no parameters
+    and is actually a deterministic operation:
+        (interface, prev_memory_state) -> (read_vectors, new_memory_state)
 
     Args:
         words_num (int): number of memory slots
@@ -226,13 +230,12 @@ class Memory(snt.RNNCore):
         ]
     )
 
-    def __init__(self, words_num=256, word_size=64, read_heads_num=4, name="memory"):
-        super().__init__(name=name)
+    def __init__(self, words_num=256, word_size=64, read_heads_num=4):
         self._N = words_num
         self._W = word_size
         self._R = read_heads_num
 
-    def _build(self, interface, prev_memory_state):
+    def __call__(self, interface, prev_memory_state):
         """Define op for the recurrent module.
 
         Args:
@@ -375,17 +378,12 @@ class Memory(snt.RNNCore):
             read_weightings=tf.TensorShape([self._N, self._R]),
         )
 
-    def initial_state(self, batch_size, name=None):
-        with tf.name_scope(self._initial_state_scope(name)):
-            return Memory.state(
-                memory_matrix=tf.fill([batch_size, self._N, self._W], EPSILON),
-                usage_vector=tf.zeros([batch_size, self._N]),
-                link_matrix=tf.zeros([batch_size, self._N, self._N]),
-                precedence_vector=tf.zeros([batch_size, self._N]),
-                write_weighting=tf.fill([batch_size, self._N], EPSILON),
-                read_weightings=tf.fill([batch_size, self._N, self._R], EPSILON),
-            )
-
-    @property
-    def output_size(self):
-        return tf.TensorShape([self._W, self._R])
+    def get_initial_state(self, batch_size, dtype=tf.float32):
+        return Memory.state(
+            memory_matrix=tf.fill([batch_size, self._N, self._W], EPSILON),
+            usage_vector=tf.zeros([batch_size, self._N], dtype=dtype),
+            link_matrix=tf.zeros([batch_size, self._N, self._N], dtype=dtype),
+            precedence_vector=tf.zeros([batch_size, self._N], dtype=dtype),
+            write_weighting=tf.fill([batch_size, self._N], EPSILON),
+            read_weightings=tf.fill([batch_size, self._N, self._R], EPSILON),
+        )

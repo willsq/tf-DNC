@@ -1,16 +1,17 @@
 .PHONY: deps
 deps:
 	pip3 install --upgrade pip
-	pip3 install tensorflow dm-sonnet
+	pip3 install -r requirements.txt
 
 .PHONY: check
 check:
-	pycodestyle --max-line-length=100 dnc
-	pylint -E dnc
+	pyflakes unittests dnc
+	pycodestyle --max-line-length=100 unittests dnc
+	pylint -j2 unittests dnc
 
 .PHONY: test
-test: check
-	python3 -m unittest discover -v unittests
+test:
+	pytest -s -v --cov-report=html:htmlcov --cov-report=term --cov dnc unittests
 
 .PHONY: viz
 viz:
@@ -20,7 +21,7 @@ viz:
 
 .PHONY: clean
 clean:
-	rm -rf ./graphs ./model* ./logs ./__pycache__
+	rm -rf graphs ./model* logs __pycache__ .pytest_cache htmlcov exp
 	find . -name '*.pyc' -delete
 
 .PHONY: babi

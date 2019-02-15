@@ -1,0 +1,7 @@
+tensorflow>=1.13.0rc1
+pycodestyle==2.5.0
+pyflakes==2.1.0
+pylint==2.2.2
+pytest==4.2.1
+pytest-cov==2.6.1
+absl-py==0.7.0

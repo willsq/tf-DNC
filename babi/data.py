@@ -48,6 +48,9 @@ def prepare_sample(sample, end_of_query_symbol, word_space_size):
         word_space_size,
         np.reshape(weights_vec, (-1, 1, 1))
     )
+def get_word_space_size(data_dir):
+    lexicon_dict = load(os.path.join(data_dir, 'lexicon-dict.pkl'))
+    return len(lexicon_dict)
 
 def get_sample(batch_size, data_dir):
     lexicon_dict = load(os.path.join(data_dir, 'lexicon-dict.pkl'))

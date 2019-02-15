@@ -24,17 +24,21 @@ tf.flags.DEFINE_string(
     "Root name of checkpointed file to test against."
 )
 
+
 def llprint(message):
     sys.stdout.write(message)
     sys.stdout.flush()
 
+
 def load(path):
     return pickle.load(open(path, 'rb'))
+
 
 def onehot(index, size):
     vec = np.zeros(size, dtype=np.float32)
     vec[int(index)] = 1.0
     return vec
+
 
 def prepare_sample(sample, end_of_query_symbol, word_space_size):
     input_vec = np.array(sample['inputs'], dtype=np.float32)
@@ -56,6 +60,7 @@ def prepare_sample(sample, end_of_query_symbol, word_space_size):
         np.reshape(weights_vec, (-1, 1, 1))
     )
 
+
 lexicon_dictionary = load(os.path.join(FLAGS.data_dir, 'lexicon-dict.pkl'))
 question_code = lexicon_dictionary["?"]
 target_code = lexicon_dictionary["-"]
@@ -71,12 +76,12 @@ with graph.as_default():
     with tf.Session(graph=graph) as session:
 
         memory_config = {
-            "words_num": 256,
+            "memory_size": 256,
             "word_size": 64,
-            "read_heads_num": 4,
+            "num_read_heads": 4,
         }
         controller_config = {
-            "hidden_size": 256,
+            "units": 256,
         }
 
         output_size = len(lexicon_dictionary)
@@ -84,8 +89,8 @@ with graph.as_default():
         target_output = tf.placeholder(tf.float32, [None, 1, output_size])
         target_mask = tf.placeholder(tf.float32, [None, 1, 1])
 
-        dnc_core = dnc.DNC(controller_config, memory_config, output_size, classic_dnc_output=False)
-        initial_state = dnc_core.initial_state(1)
+        dnc_core = dnc.DNC(output_size, controller_units=256, **memory_config)
+        initial_state = dnc_core.get_initial_state(batch_size=1)
         output_logits, _ = tf.nn.dynamic_rnn(
             cell=dnc_core,
             inputs=input_data,
@@ -122,7 +127,7 @@ with graph.as_default():
                 desired_answers = np.array(story['outputs'])
                 input_vec, _, _, _ = prepare_sample(story, target_code, len(lexicon_dictionary))
                 softmax_output = session.run(softmaxed, feed_dict={
-                        input_data: input_vec,
+                    input_data: input_vec,
                 })
                 softmax_output = np.squeeze(softmax_output)
                 given_answers = np.argmax(softmax_output[target_mask], axis=1)
@@ -132,11 +137,12 @@ with graph.as_default():
                     question_grade = []
                     targets_cursor = question_indx + 1
                     while targets_cursor < len(astory) and astory[targets_cursor] == target_code:
-                        question_grade.append(given_answers[answers_cursor] == desired_answers[answers_cursor])
+                        question_grade.append(
+                            given_answers[answers_cursor] == desired_answers[answers_cursor])
                         # if given_answers[answers_cursor] != desired_answers[answers_cursor]:
-                            # print("\nguessed:", given_answers[answers_cursor])
-                            # print("correct: ", desired_answers[answers_cursor])
-                            # print(np.sum(softmax_output[target_mask][answers_cursor]))
+                        # print("\nguessed:", given_answers[answers_cursor])
+                        # print("correct: ", desired_answers[answers_cursor])
+                        # print(np.sum(softmax_output[target_mask][answers_cursor]))
 
                         answers_cursor += 1
                         targets_cursor += 1
@@ -155,7 +161,7 @@ with graph.as_default():
         paper_means = {
             '1': '9.0±12.6%', '2': '39.2±20.5%', '3': '39.6±16.4%',
             '4': '0.4±0.7%', '5': '1.5±1.0%', '6': '6.9±7.5%', '7': '9.8±7.0%',
-            '8': '5.5±5.9%', '9': '7.7±8.3%', '10': '9.6±11.4%', '11':'3.3±5.7%',
+            '8': '5.5±5.9%', '9': '7.7±8.3%', '10': '9.6±11.4%', '11': '3.3±5.7%',
             '12': '5.0±6.3%', '13': '3.1±3.6%', '14': '11.0±7.5%', '15': '27.2±20.1%',
             '16': '53.6±1.9%', '17': '32.4±8.0%', '18': '4.2±1.8%', '19': '64.6±37.4%',
             '20': '0.0±0.1%', 'mean': '16.7±7.6%', 'fail': '11.2±5.4'
@@ -165,7 +171,7 @@ with graph.as_default():
             task_result = "%.2f%%" % (tasks_results[task_id] * 100)
             print("%-27s%-27s%s" % (tasks_names[task_id], task_result, paper_means[task_id]))
         print("-------------------------------------------------------------------")
-        all_tasks_results = [v for _,v in tasks_results.items()]
+        all_tasks_results = [v for _, v in tasks_results.items()]
         results_mean = "%.2f%%" % (np.mean(all_tasks_results) * 100)
         failed_count = "%d" % (np.sum(np.array(all_tasks_results) > 0.05))
 

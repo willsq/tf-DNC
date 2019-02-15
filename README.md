@@ -6,65 +6,33 @@ This is a reimplementation of Deepmind's Differentiable Neural Computer, as publ
 
 The aim of this repo is to provide an intuitive and understandable implementation, whilst also reproducing the main results from the paper. Pull requests are very welcome for both fixes and clarifications in comments.
 
-## Introduction
-
-The Differentiable Neural Computer (DNC) is a neural network that, loosely speaking, separates computation from memory.
-
-LSTMs or RNNs have their memory tied up in the activations of neurons and these typically account for a small proportion of the total number of parameters. For a number of tasks, we want to be able to scale memory without having to scale the whole rest of the network - enter differentiable memory structures.
-
-The Differentiable Neural Computer is so called because it attempts to augment a neural net with the a memory bank such that computations can proceed under a fully differentiable analogue of the [Harvard architecture](https://en.wikipedia.org/wiki/Harvard_architecture) complete with memory allocation and deallocation.
-To push the analogy further: LSTMs are a simple CPU with their activations representing the contents of registers; however, the DNC is a CPU (called the 'controller') with a separate and independently scalable differentiable form of RAM (called the 'memory').
-
-So, when is this approach useful? Well, many sequential tasks have implicit structure in them which is best exploited by operations on particular data structures. So, if we can learn to store the right data structures themselves and learn to operate on them in the right way, then these tasks become easy. It's the same in normal programming: we choose the right data structure and right algorithm to deal with problems; in doing so we try to select the most desirable tradeoff between computation and memory. When we introduce RNNs with external memory, we can use backprop to learn that right tradeoff.
-
-The problem is that it's difficult to learn that tradeoff if we can't allocate and deallocate memory more explicitly. The more we have a mechanism to do that, the more we can learn when to offload the right stuff to memory and when to perform a particular action on that memory. One of the key aspects of the DNC is its ability to learn to manage memory in that same way.
-
-## How it works
-
-In practice, we don't want to have to interact with the whole memory at once - this motivates the use of **attention**. The way you weight each row in the memory matrix is **the key** to good performance in these types of architectures.
-
-In the DNC the read/write weightings come from 3 core attention-based ideas: content, memory allocation and temporal order of memory interactions.
-
-1) **Content**: find memories closest to the key (cosine distance).
-
-2) **Memory allocation**: we now have memory management problems. Don't want to be tied to using contiguous blocks (by using indices into the memory matrix). So the DNC maintains a list of free memory and its usage and then gives you the choice: update or write somewhere new.
-For example, once it's read something and used it, it can learn to free up that memory slot.
-
-3) **Temporal order**: want to be able to iterate through memories in the order that they were written. This is an important prior for some computation tasks where the desired solution requires reading and writing large amounts of data in sequential order. We use some helper variables in the network to help calculate how use the idea of temporal ordering to come up with a weighting. For example the 'precedence weighting' keeps track of the location of which was just written to.
-
-For more in-depth information, please see the comments provided in the implementation.
+The DNC cell implements the Keras Layer API. There is a tentative Tensorflow 2.0 training script `babi/train_eager.py` which is currently much slower than the graph-based `train.py`.
 
 ## Requirements
 
-- Python3
-- NumPy
-- Tensorflow 1.4
-- sonnet
+- python3 (>=3.6.8)
+- python3-pip
+- make
 
 ## Development
 
-Development is managed by a Makefile with various targets.
+Development is managed by a Makefile with various targets:
 ```
-    - make clean        # restore clean environment
-    - make deps         # install python3 dependencies
-    - make check        # enforces linting compliance
-    - make test         # exercises tests
-    - make viz          # brings up interactive graph via tensorboard
-    - make babi         # begin training on the babi dataset
+- make clean        # restore clean environment
+- make deps         # install python3 dependencies
+- make check        # enforces linting compliance
+- make test         # exercises tests
+- make viz          # brings up interactive graph via tensorboard
+- make babi         # begin training on the babi dataset
 ```
 
-## Explore the architecture
-
-The model has been carefully defined using Tensorflow's named scopes in the computational graph to make visualization as instructive as possible. As such, a useful introduction to understanding the DNC architecture is simply to run `$ make viz` and explore the graph interactively in your browser at `http://localhost:6006`.
-
-![visualization example](./assets/visualization_example.gif)
-
-## Basic usage
+## Reproduce Paper's Results
 
 To train on the en-10k babi dataset:
 ```
+$ make deps
 $ make test
-$ python3 babi/train.py --checkpoint_dir=model
+$ python3 babi/train.py --checkpoint_dir=model --num_training_iterations=590000
 $ python3 babi/test.py --checkpooint_file=model/model.ckpt-590000
 ```
 
@@ -114,6 +82,12 @@ Results after one run on CPU, classic_dnc_output=False (see implementation for d
 | **Failed (Error > 5%)**| **8**        | 11.2 &plusmn; 5.4        | 17.1 &plusmn; 1.0 |
 
 I believe that the loss would have continued to decrease had I continued training for longer, unfortunately my SSD failed at 590,000 iterations.
+
+## Explore the architecture
+
+The model has been carefully defined using Tensorflow's named scopes in the computational graph to make visualization as instructive as possible. As such, a useful introduction to understanding the DNC architecture is simply to run `$ make viz` and explore the graph interactively in your browser at `http://localhost:6006`.
+
+![visualization example](./assets/visualization_example.gif)
 
 ## License
 
